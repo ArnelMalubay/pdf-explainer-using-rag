@@ -1,7 +1,8 @@
 import os
 from typing import List, Dict, Any
 import pymupdf4llm
-
+import re
+import unicodedata
 
 def parse_pdf(filepath: str, write_images: bool = False) -> List[Dict[str, Any]]:
     """
@@ -108,3 +109,76 @@ def parse_pdfs(pdf_list: List[str], write_images: bool = False) -> List[Dict[str
     return all_results
 
 
+def clean_text(text: str) -> str:
+    """
+    Clean text for better RAG performance while preserving markdown structure.
+    
+    Args:
+        text (str): Raw text to clean
+        
+    Returns:
+        str: Cleaned text optimized for embedding and chunking
+    """
+    if not text or not text.strip():
+        return ""
+    
+    # Normalize unicode characters
+    text = unicodedata.normalize('NFKD', text)
+    
+    # Fix common PDF extraction artifacts
+    # Fix hyphenated words broken across lines
+    text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
+    
+    # Remove excessive whitespace while preserving structure
+    text = re.sub(r' +', ' ', text)  # Multiple spaces to single space
+    text = re.sub(r'\t+', ' ', text)  # Tabs to single space
+    text = re.sub(r'\n +', '\n', text)  # Remove spaces after newlines
+    text = re.sub(r' +\n', '\n', text)  # Remove spaces before newlines
+    
+    # Normalize line breaks (preserve paragraph structure)
+    text = re.sub(r'\n{3,}', '\n\n', text)  # Max 2 consecutive newlines
+    text = re.sub(r'\r\n', '\n', text)  # Windows line endings to Unix
+    text = re.sub(r'\r', '\n', text)  # Old Mac line endings to Unix
+    
+    # Clean up common PDF artifacts
+    # Remove standalone page numbers (numbers on their own line)
+    text = re.sub(r'\n\s*\d+\s*\n', '\n', text)
+    
+    # Remove standalone roman numerals (common in headers/footers)
+    text = re.sub(r'\n\s*[ivxlcdm]+\s*\n', '\n', text, flags = re.IGNORECASE)
+    
+    # Clean up markdown table formatting (preserve structure but clean spacing)
+    # Fix spacing around table delimiters
+    text = re.sub(r' +\| +', ' | ', text)  # Normalize spacing around pipes
+    text = re.sub(r'^\| +', '| ', text, flags = re.MULTILINE)  # Start of line pipes
+    text = re.sub(r' +\|$', ' |', text, flags = re.MULTILINE)  # End of line pipes
+    
+    # Preserve list formatting but clean spacing
+    text = re.sub(r'\n +([•\-\*\+])', r'\n\1', text)  # Bullet lists
+    text = re.sub(r'\n +(\d+\.)', r'\n\1', text)  # Numbered lists
+    
+    # Clean up header formatting (preserve markdown headers)
+    text = re.sub(r'\n +(#+)', r'\n\1', text)  # Remove spaces before headers
+    text = re.sub(r'(#+) +([^\n]+)', r'\1 \2', text)  # Normalize header spacing
+    
+    # Remove excessive punctuation (but preserve meaningful punctuation)
+    text = re.sub(r'\.{3,}', '...', text)  # Multiple dots to ellipsis
+    text = re.sub(r'-{3,}', '---', text)  # Multiple dashes to em dash
+    
+    # Clean up quote marks
+    text = re.sub(r'[\u201C\u201D\u201E]', '"', text)  # Normalize quotes
+    text = re.sub(r'[\u2018\u2019]', "'", text)  # Normalize apostrophes
+    
+    # Remove zero-width characters and other invisible characters
+    text = re.sub(r'[\u200B\u200C\u200D\uFEFF]', '', text)
+    
+    # Final cleanup
+    text = text.strip()  # Remove leading/trailing whitespace
+    
+    # Ensure text doesn't start or end with newlines after cleaning
+    text = text.strip('\n')
+    
+    return text 
+
+
+  
