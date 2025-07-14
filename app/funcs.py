@@ -3,6 +3,8 @@ from typing import List, Dict, Any
 import pymupdf4llm
 import re
 import unicodedata
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+import chromadb
 
 def parse_pdf(filepath: str, write_images: bool = False) -> List[Dict[str, Any]]:
     """
@@ -37,7 +39,7 @@ def parse_pdf(filepath: str, write_images: bool = False) -> List[Dict[str, Any]]
             # Create enhanced page data dictionary
             enhanced_page_data = {
                 'filename': filename,
-                'page': page_metadata.get('page', 0) + 1,  # Convert to 1-based indexing
+                'page': page_metadata.get('page', 0),
                 'text': page_text,
                 'text_format': 'markdown',
                 'extraction_method': 'pymupdf4llm',
@@ -178,7 +180,186 @@ def clean_text(text: str) -> str:
     # Ensure text doesn't start or end with newlines after cleaning
     text = text.strip('\n')
     
-    return text 
+    return text
 
 
-  
+def chunk_text_recursive(text: str, chunk_size: int = 750, chunk_overlap: int = 250) -> List[str]:
+    """
+    Split text into chunks using LangChain's RecursiveCharacterTextSplitter.
+    
+    Args:
+        text (str): Text to be chunked
+        chunk_size (int): Maximum size of each chunk in characters
+        chunk_overlap (int): Number of characters to overlap between chunks
+        
+    Returns:
+        List[str]: List of text chunks
+    """
+    if not text or not text.strip():
+        return []
+    
+    # Initialize the text splitter
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size = chunk_size,
+        chunk_overlap = chunk_overlap,
+        length_function = len,
+        is_separator_regex = False,
+    )
+    
+    # Split the text and return chunks
+    chunks = text_splitter.split_text(text)
+    
+    return chunks
+
+
+def start_chroma_client(name: str):
+    """
+    Get or create a Chroma collection with the given name using ephemeral client.
+    
+    Args:
+        name (str): Name of the collection
+        
+    Returns:
+        Collection: ChromaDB collection object
+    """
+    client = chromadb.EphemeralClient()
+    collection = client.get_or_create_collection(name = name)
+    return collection
+
+
+
+def preprocess_text(pages: List[Dict[str, Any]], chunk_size: int = 750, chunk_overlap: int = 250) -> List[Dict[str, Any]]:
+    """
+    Clean and chunk text from parsed pages, retaining metadata.
+    
+    Args:
+        pages (List[Dict[str, Any]]): Output from parse_pdfs function
+        chunk_size (int): Size for text chunking
+        chunk_overlap (int): Overlap for text chunking
+        
+    Returns:
+        List[Dict[str, Any]]: List of chunk dictionaries with metadata
+    """
+    chunk_documents = []
+    
+    for page in pages:
+        # Clean the text
+        cleaned_text = clean_text(page['text'])
+        
+        # Skip empty pages
+        if not cleaned_text.strip():
+            continue
+            
+        # Chunk the cleaned text
+        chunks = chunk_text_recursive(cleaned_text, chunk_size, chunk_overlap)
+        
+        # Create chunk documents with metadata
+        for chunk_num, chunk_text in enumerate(chunks):
+            chunk_doc = {
+                # Original page metadata
+                'filename': page['filename'],
+                'page': page['page'],
+                'text_format': page['text_format'],
+                'extraction_method': page['extraction_method'],
+                'page_has_tables': page['has_tables'],
+                'page_char_count': page['char_count'],
+                'page_word_count': page['word_count'],
+                'page_line_count': page['line_count'],
+                'page_images_extracted': page['images_extracted'],
+                'page_source_bbox': page['source_bbox'],
+                'page_source_page_size': page['source_page_size'],
+                # Chunk-specific data
+                'text': chunk_text,
+                'chunk_number': chunk_num + 1,
+                'total_chunks_for_page': len(chunks),
+                'chunk_char_count': len(chunk_text),
+                'chunk_word_count': len(chunk_text.split()),
+                'is_chunked': True,
+                'chunk_size_used': chunk_size,
+                'chunk_overlap_used': chunk_overlap
+            }
+            chunk_documents.append(chunk_doc)
+    
+    return chunk_documents
+
+
+def add_documents(name: str, documents: List[Dict[str, Any]]) -> None:
+    """
+    Add documents to a ChromaDB collection.
+    
+    Args:
+        name (str): Collection name
+        documents (List[Dict[str, Any]]): List of document dictionaries
+    """
+    collection = start_chroma_client(name)
+    chunk_documents = preprocess_text(documents)
+
+    # Prepare data for ChromaDB
+    ids = []
+    texts = []
+    metadatas = []
+    
+    for doc in chunk_documents:
+        # Create unique ID: {filename}_page{page}_chunk{chunk}
+        doc_id = f"{doc['filename']}_page{doc['page']}_chunk{doc['chunk_number']}"
+        ids.append(doc_id)
+        texts.append(doc['text'])
+        
+        # Prepare metadata (exclude text and convert non-string values)
+        metadata = {}
+        for key, value in doc.items():
+            if key != 'text':
+                metadata[key] = value
+        
+        metadatas.append(metadata)
+    
+    # Add to collection
+    collection.add(
+        ids = ids,
+        documents = texts,
+        metadatas = metadatas
+    )
+
+
+def retrieve_documents(name: str, query: str, top_k: int = 5) -> Dict[str, Any]:
+    """
+    Query documents from a ChromaDB collection.
+    
+    Args:
+        name (str): Collection name
+        query (str): Query text
+        top_k (int): Number of top results to return
+        
+    Returns:
+        Dict[str, Any]: Query results from ChromaDB
+    """
+    collection = start_chroma_client(name)
+    
+    results = collection.query(
+        query_texts = [query],
+        n_results = top_k
+    )
+    
+    return results
+
+
+# filename = 'sample_docs/Arnel Malubay Resume.pdf'
+# pages = parse_pdf(filename)
+# cleaned_text = clean_text(pages[1]['text'])
+# chunks = chunk_text_recursive(cleaned_text)
+# for i in range(len(chunks)):
+#     print(f'Chunk {i+1}:')
+#     print(chunks[i])
+#     print('-' * 100)
+
+collection_name = 'test_collection'
+filename = 'sample_docs/Arnel Malubay Resume.pdf'
+pages = parse_pdf(filename)
+# for result in preprocess_text(pages):
+#     print(result)
+#     print('-' * 100)
+add_documents(collection_name, pages)
+results = retrieve_documents(collection_name, 'Hobbies of Arnel Malubay')
+for result in results['documents']:
+    print(result)
+    print('-' * 100)
