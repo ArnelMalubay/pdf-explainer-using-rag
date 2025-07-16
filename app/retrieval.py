@@ -5,6 +5,8 @@ import re
 import unicodedata
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import chromadb
+from chromadb.utils import embedding_functions
+
 
 def parse_pdf(filepath: str, write_images: bool = False) -> List[Dict[str, Any]]:
     """
@@ -183,7 +185,7 @@ def clean_text(text: str) -> str:
     return text
 
 
-def chunk_text_recursive(text: str, chunk_size: int = 750, chunk_overlap: int = 250) -> List[str]:
+def chunk_text_recursive(text: str, chunk_size: int = 500, chunk_overlap: int = 150) -> List[str]:
     """
     Split text into chunks using LangChain's RecursiveCharacterTextSplitter.
     
@@ -212,7 +214,7 @@ def chunk_text_recursive(text: str, chunk_size: int = 750, chunk_overlap: int = 
     return chunks
 
 
-def start_chroma_client(name: str):
+def access_chroma_collection(name: str):
     """
     Get or create a Chroma collection with the given name using ephemeral client.
     
@@ -223,12 +225,15 @@ def start_chroma_client(name: str):
         Collection: ChromaDB collection object
     """
     client = chromadb.EphemeralClient()
-    collection = client.get_or_create_collection(name = name)
+    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name = "BAAI/bge-small-en-v1.5"
+    )
+    collection = client.get_or_create_collection(name = name, embedding_function = sentence_transformer_ef)
     return collection
 
 
 
-def preprocess_text(pages: List[Dict[str, Any]], chunk_size: int = 750, chunk_overlap: int = 250) -> List[Dict[str, Any]]:
+def preprocess_text(pages: List[Dict[str, Any]], chunk_size: int = 500, chunk_overlap: int = 150) -> List[Dict[str, Any]]:
     """
     Clean and chunk text from parsed pages, retaining metadata.
     
@@ -291,7 +296,7 @@ def add_documents(name: str, documents: List[Dict[str, Any]]) -> None:
         name (str): Collection name
         documents (List[Dict[str, Any]]): List of document dictionaries
     """
-    collection = start_chroma_client(name)
+    collection = access_chroma_collection(name)
     chunk_documents = preprocess_text(documents)
 
     # Prepare data for ChromaDB
@@ -305,10 +310,10 @@ def add_documents(name: str, documents: List[Dict[str, Any]]) -> None:
         ids.append(doc_id)
         texts.append(doc['text'])
         
-        # Prepare metadata (exclude text and convert non-string values)
+        # Prepare metadata (exclude text and None values)
         metadata = {}
         for key, value in doc.items():
-            if key != 'text':
+            if key != 'text' and value is not None:
                 metadata[key] = value
         
         metadatas.append(metadata)
@@ -333,7 +338,7 @@ def retrieve_documents(name: str, query: str, top_k: int = 5) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Query results from ChromaDB
     """
-    collection = start_chroma_client(name)
+    collection = access_chroma_collection(name)
     
     results = collection.query(
         query_texts = [query],
@@ -359,7 +364,9 @@ pages = parse_pdf(filename)
 #     print(result)
 #     print('-' * 100)
 add_documents(collection_name, pages)
-results = retrieve_documents(collection_name, 'Hobbies of Arnel Malubay')
-for result in results['documents']:
-    print(result)
+
+results = retrieve_documents(collection_name, 'current job', 3)
+for document in results['documents'][0]:
+    print(document)
     print('-' * 100)
+
