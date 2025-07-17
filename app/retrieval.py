@@ -1,3 +1,5 @@
+# This file contains the functions for the text processing and document retrieval segment of the chatbot
+
 import os
 from typing import List, Dict, Any
 import pymupdf4llm
@@ -85,32 +87,6 @@ def parse_pdf(filepath: str, write_images: bool = False) -> List[Dict[str, Any]]
             return []
     
     return result
-
-
-def parse_pdfs(pdf_list: List[str], write_images: bool = False) -> List[Dict[str, Any]]:
-    """
-    Parse multiple PDF files and concatenate the results.
-    
-    Args:
-        pdf_list (list): List of PDF file paths
-        write_images (bool): Whether to extract and save images from the PDFs
-        
-    Returns:
-        list: Concatenated list of dictionaries from all PDFs with enhanced metadata
-    """
-    all_results = []
-    
-    for pdf_path in pdf_list:
-        pdf_result = parse_pdf(pdf_path, write_images = write_images)
-        
-        # Add batch processing metadata
-        for page_data in pdf_result:
-            page_data['batch_size'] = len(pdf_list)
-            page_data['file_index'] = pdf_list.index(pdf_path)
-        
-        all_results.extend(pdf_result)
-    
-    return all_results
 
 
 def clean_text(text: str) -> str:
@@ -238,7 +214,7 @@ def preprocess_text(pages: List[Dict[str, Any]], chunk_size: int = 500, chunk_ov
     Clean and chunk text from parsed pages, retaining metadata.
     
     Args:
-        pages (List[Dict[str, Any]]): Output from parse_pdfs function
+        pages (List[Dict[str, Any]]): Output from parse_pdf function
         chunk_size (int): Size for text chunking
         chunk_overlap (int): Overlap for text chunking
         
@@ -346,27 +322,3 @@ def retrieve_documents(name: str, query: str, top_k: int = 5) -> Dict[str, Any]:
     )
     
     return results
-
-
-# filename = 'sample_docs/Arnel Malubay Resume.pdf'
-# pages = parse_pdf(filename)
-# cleaned_text = clean_text(pages[1]['text'])
-# chunks = chunk_text_recursive(cleaned_text)
-# for i in range(len(chunks)):
-#     print(f'Chunk {i+1}:')
-#     print(chunks[i])
-#     print('-' * 100)
-
-collection_name = 'test_collection'
-filename = 'sample_docs/Arnel Malubay Resume.pdf'
-pages = parse_pdf(filename)
-# for result in preprocess_text(pages):
-#     print(result)
-#     print('-' * 100)
-add_documents(collection_name, pages)
-
-results = retrieve_documents(collection_name, 'current job', 3)
-for document in results['documents'][0]:
-    print(document)
-    print('-' * 100)
-
