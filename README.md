@@ -2,7 +2,7 @@
 
 A powerful AI-powered chatbot that allows you to upload PDF documents and ask intelligent questions about their content using Retrieval-Augmented Generation (RAG) technology.
 
-<p align="center"><img src="app_screenshot.png" width="700"/></p>
+<p align="center"><img src="app_screenshot.png" width="900"/></p>
 
 ## 🚀 Features
 
