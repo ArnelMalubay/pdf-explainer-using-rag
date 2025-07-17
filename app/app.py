@@ -1,16 +1,22 @@
 # PDF Explainer Chatbot - Upload PDFs and ask questions about their content
 
 import gradio as gr
+from typing import List, Generator, Dict, Any, Tuple
 from llm import chat_with_assistant_rag, SYSTEM_MESSAGE
 from retrieval import access_chroma_collection, parse_pdf, add_documents
 
 # Global collection name
 COLLECTION_NAME = "pdf_collection"
 
-# Function to handle PDF uploads
-def handle_pdf_upload(files):
+def handle_pdf_upload(files: List[Any]) -> str:
     """
-    Process uploaded PDF files and add them to the Chroma collection
+    Process uploaded PDF files and add them to the Chroma collection.
+    
+    Args:
+        files (List[Any]): List of uploaded file objects
+        
+    Returns:
+        str: Status message about the upload process
     """
     if not files:
         return "No files uploaded."
@@ -34,10 +40,16 @@ def handle_pdf_upload(files):
     except Exception as e:
         return f"❌ Error processing files: {str(e)}"
 
-# Main chat function that handles the conversation
-def respond(message, history):
+def respond(message: str, history: List[Dict[str, Any]]) -> Generator[str, None, None]:
     """
-    Handle user messages and return streaming responses with RAG
+    Handle user messages and return streaming responses with RAG.
+    
+    Args:
+        message (str): User message
+        history (List[Dict[str, Any]]): Conversation history
+        
+    Yields:
+        str: Streaming response chunks
     """
     if not message.strip():
         yield "Please enter a message."
@@ -82,7 +94,16 @@ with gr.Blocks(title = "PDF Explainer Chatbot") as demo:
     )
     
     # Handle file upload
-    def show_status_and_process(files):
+    def show_status_and_process(files: List[Any]) -> tuple[str, Dict[str, Any]]:
+        """
+        Process files and show status.
+        
+        Args:
+            files (List[Any]): List of uploaded file objects
+            
+        Returns:
+            tuple[str, Dict[str, Any]]: Status message and visibility update
+        """
         result = handle_pdf_upload(files)
         return result, gr.update(visible = True)
     
