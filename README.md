@@ -29,6 +29,10 @@ A powerful AI-powered chatbot that allows you to upload PDF documents and ask in
 - Python 3.8+
 - Groq API key (free at [console.groq.com](https://console.groq.com))
 
+## Online Access
+
+You can access the app freely on HuggingFace Spaces via this [link](https://huggingface.co/spaces/arnel8888/pdf-explainer-using-RAG)
+
 ## 🔧 Installation
 
 ### Local Setup
